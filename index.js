@@ -8,7 +8,7 @@ const BOT_TOKEN = "8641069487:AAEpCameV9iRrj2BHjHT9gBvN8jAG_-IJsU";
 const GROUP_ID = -1003752493443;
 const OWNER_ID = 7077890783;
 const API_URL = "https://numberpanel.tech/api/otp?count=200";
-const POLL_INTERVAL = 10000; // 10 seconds
+const POLL_INTERVAL = 5000; // Fast response ke liye 5 seconds
 
 // MongoDB URI
 const MONGO_URI = 'mongodb+srv://kojiv58207_db_user:9QRspjWGLwqIdVVt@tznumberbot.jsrs9mx.mongodb.net/tznumberbot?retryWrites=true&w=majority&appName=TZNUMBERBOT';
@@ -36,7 +36,7 @@ const SentOTP = mongoose.model('SentOTP', orderSchema);
 
 // --- BOT SETUP ---
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
-console.log("🚀 TEAM ZERO OTP Forwarder Bot is running...");
+console.log("🚀 TEAM ZERO OTP Forwarder Bot is running fast...");
 
 let adminState = {};
 
@@ -213,7 +213,7 @@ bot.on('message', async (msg) => {
     }
 });
 
-// --- HELPER FUNCTIONS FOR OTP PROCESSING ---
+// --- HELPER FUNCTIONS ---
 function extractOtp(msgText) {
     const match = msgText.match(/\d{3}[-\s]?\d{3,4}|\d{4,8}/);
     return match ? match[0] : 'Unknown';
@@ -232,21 +232,17 @@ async function pollOTPs() {
         const items = response.data;
 
         if (Array.isArray(items)) {
-            // Reverse taake purane pehle aur naye baad mein hon
             for (let item of items.reverse()) {
-                // item structure based on Python code: [service, number, message_text, timestamp_id, ...]
                 const service = item[0] || 'Unknown';
                 const phoneNumber = item[1] || 'Unknown';
                 const messageText = item[2] || '';
                 const uniqueId = String(item[3] || `${service}_${phoneNumber}_${Date.now()}`);
 
-                // Check if already processed in DB
                 const exists = await SentOTP.findOne({ uid: uniqueId });
                 if (!exists) {
                     const otpCode = extractOtp(messageText);
                     const maskedNum = maskNumber(phoneNumber);
 
-                    // Save to DB to prevent duplicate sending
                     await SentOTP.create({
                         uid: uniqueId,
                         service: service,
@@ -254,21 +250,19 @@ async function pollOTPs() {
                         otp: otpCode
                     });
 
-                    // Format message
                     const text = `🔥 *TEAM ZERO OTP RECEIVED* 🔥\n\n🌐 Service: *${service.toUpperCase()}*\n📱 Number: \`${maskedNum}\`\n💬 OTP Code: \`${otpCode}\`\n\n_POWERED BY TEAM ZERO_`;
                     
                     const markup = {
                         inline_keyboard: [
                             [{ text: `🔑 OTP: ${otpCode}`, callback_data: 'noop' }],
                             [
-                                { text: "Methods", url: "https://youtube.com/@xclusor" },
-                                { text: "Channel", url: "https://whatsapp.com/channel/0029Vb7CHRO96H4QS1ynKI1J" }
+                                { text: "Methods", url: "https://whatsapp.com/channel/0029Vb7CHRO96H4QS1ynKI1J" },
+                                { text: "Channel", url: "https://t.me/teamzerochanel" }
                             ],
-                            [{ text: "OTP Panel", url: "https://t.me/teamzerootp" }]
+                            [{ text: "OTP Panel", url: "https://t.me/teamzerootpforwardbot" }]
                         ]
                     };
 
-                    // Send to Group
                     await bot.sendMessage(GROUP_ID, text, { parse_mode: 'Markdown', reply_markup: markup });
                     console.log(`✅ Sent OTP for ${phoneNumber} - ${service}`);
                 }
@@ -279,5 +273,5 @@ async function pollOTPs() {
     }
 }
 
-// Start polling interval
+// Fast polling interval (5 seconds)
 setInterval(pollOTPs, POLL_INTERVAL);
