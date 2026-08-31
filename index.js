@@ -3,30 +3,20 @@ const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 const mongoose = require('mongoose');
 
-// --- TEAM ZERO VARIABLES ---
-const token = '8641069487:AAEpCameV9iRrj2BHjHT9gBvN8jAG_-IJsU';
-const groupId = -1003752493443;
-const ownerId = 7077890783;
-const numberPanelApiKey = 'np_live_yltQxyzf5AruC7F-jTYZS82NTse7hq2VwXMVVrM-4vs'; 
+// --- CONFIGURATION ---
+const BOT_TOKEN = "8641069487:AAEpCameV9iRrj2BHjHT9gBvN8jAG_-IJsU";
+const GROUP_ID = -1003752493443;
+const OWNER_ID = 7077890783;
+const API_URL = "https://numberpanel.tech/api/otp?count=200";
+const POLL_INTERVAL = 10000; // 10 seconds
 
 // MongoDB URI
-const mongoUri = 'mongodb+srv://kojiv58207_db_user:9QRspjWGLwqIdVVt@tznumberbot.jsrs9mx.mongodb.net/tznumberbot?retryWrites=true&w=majority&appName=TZNUMBERBOT';
+const MONGO_URI = 'mongodb+srv://kojiv58207_db_user:9QRspjWGLwqIdVVt@tznumberbot.jsrs9mx.mongodb.net/tznumberbot?retryWrites=true&w=majority&appName=TZNUMBERBOT';
 
-// --- DATABASE SETUP (MongoDB) ---
-mongoose.connect(mongoUri)
+// --- DATABASE SETUP ---
+mongoose.connect(MONGO_URI)
     .then(() => console.log('✅ TEAM ZERO Database Connected Successfully!'))
     .catch(err => console.error('❌ Database connection error:', err));
-
-// Schemas
-const orderSchema = new mongoose.Schema({
-    orderId: String,
-    phoneNumber: String,
-    userId: Number,
-    service: String,
-    status: { type: String, default: 'pending' },
-    createdAt: { type: Date, default: Date.now }
-});
-const Order = mongoose.model('Order', orderSchema);
 
 const userSchema = new mongoose.Schema({
     chatId: { type: Number, unique: true },
@@ -35,26 +25,30 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-// --- BOT SETUP ---
-const bot = new TelegramBot(token, { polling: true });
-console.log("🚀 TEAM ZERO OTP Bot is running perfectly...");
+const orderSchema = new mongoose.Schema({
+    uid: { type: String, unique: true },
+    service: String,
+    phoneNumber: String,
+    otp: String,
+    createdAt: { type: Date, default: Date.now }
+});
+const SentOTP = mongoose.model('SentOTP', orderSchema);
 
-// Admin State for Broadcast
+// --- BOT SETUP ---
+const bot = new TelegramBot(BOT_TOKEN, { polling: true });
+console.log("🚀 TEAM ZERO OTP Forwarder Bot is running...");
+
 let adminState = {};
 
-// --- FORCE JOIN VERIFICATION FUNCTION ---
+// --- FORCE JOIN VERIFICATION ---
 async function checkForceJoin(userId) {
-    if (userId === ownerId) return true;
-    
+    if (userId === OWNER_ID) return true;
     try {
         const channelCheck = await bot.getChatMember('@teamzerochanel', userId);
         const groupCheck = await bot.getChatMember('@teamzerootp', userId);
         
         const validStatuses = ['member', 'administrator', 'creator'];
-        const inChannel = validStatuses.includes(channelCheck.status);
-        const inGroup = validStatuses.includes(groupCheck.status);
-        
-        return (inChannel && inGroup);
+        return validStatuses.includes(channelCheck.status) && validStatuses.includes(groupCheck.status);
     } catch (error) {
         console.error("Force Join Check Error:", error.message);
         return true; 
@@ -68,7 +62,7 @@ function sendForceJoinMenu(chatId) {
 
 Mubarak ho! Aap is NUMBER BOT ko bilkul FREE use kar sakte hain. ❤️
 
-⚠️ *Note:* Bot use karne ke liye Telegram Channel, OTP Group aur WHATSAPP CHANEL join karna lazmi hai.
+⚠️ *Note:* Bot use karne ke liye Telegram Channel, OTP Group aur WHATSAPP CHANNEL join karna lazmi hai.
 
 ⚡ *POWERED BY TEAM ZERO*
     `;
@@ -80,7 +74,6 @@ Mubarak ho! Aap is NUMBER BOT ko bilkul FREE use kar sakte hain. ❤️
                 [{ text: '📢 Join Telegram Channel', url: 'https://t.me/teamzerochanel' }],
                 [{ text: '💬 Join Telegram Group', url: 'https://t.me/teamzerootp' }],
                 [{ text: '🟢 Join WhatsApp Channel', url: 'https://whatsapp.com/channel/0029Vb7CHRO96H4QS1ynKI1J' }],
-                [{ text: '🔎 Sim Database Bot', url: 'https://t.me/teamzerotracesimdataroobot' }],
                 [{ text: '📞 Contact Bot', url: 'https://t.me/teamzerocontectbot' }],
                 [{ text: '✅ Main Ne Join Kar Liya (Verify)', callback_data: 'verify_join' }]
             ]
@@ -93,7 +86,7 @@ function sendMainMenu(chatId) {
     const welcomeMessage = `
 Welcome to *TEAM ZERO OTP BOT* 🚀
 
-Neeche diye gaye buttons se apni service select karein:
+Neeche diye gaye buttons se apni service select karein ya live OTPs group mein check karein.
 
 *Support & Contact:* @teamzerocontectbot
 
@@ -104,8 +97,8 @@ _POWERED BY TEAM ZERO_
         disable_web_page_preview: true,
         reply_markup: {
             inline_keyboard: [
-                [{ text: '🟢 WhatsApp', callback_data: 'buy_whatsapp' }, { text: '🔵 Facebook', callback_data: 'buy_facebook' }],
-                [{ text: '✈️ Telegram', callback_data: 'buy_telegram' }, { text: '📸 Instagram', callback_data: 'buy_instagram' }],
+                [{ text: '🟢 WhatsApp', callback_data: 'service_whatsapp' }, { text: '🔵 Facebook', callback_data: 'service_facebook' }],
+                [{ text: '✈️ Telegram', callback_data: 'service_telegram' }, { text: '📸 Instagram', callback_data: 'service_instagram' }],
                 [{ text: '👤 Admin Panel', callback_data: 'admin_panel' }]
             ]
         }
@@ -128,27 +121,25 @@ function sendAdminPanel(chatId) {
 // --- START COMMAND ---
 bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
-    
     try {
         await User.updateOne({ chatId }, { $set: { chatId } }, { upsert: true });
-    } catch (e) { console.log("User save error"); }
+    } catch (e) {}
 
     const isJoined = await checkForceJoin(chatId);
     if (!isJoined) {
         return sendForceJoinMenu(chatId);
     }
-    
     sendMainMenu(chatId);
 });
 
-// --- ADMIN PANEL COMMAND ---
+// --- ADMIN COMMAND ---
 bot.onText(/\/admin/, (msg) => {
     const chatId = msg.chat.id;
-    if (chatId !== ownerId) return bot.sendMessage(chatId, "❌ You are not authorized.");
+    if (chatId !== OWNER_ID) return bot.sendMessage(chatId, "❌ Not authorized.");
     sendAdminPanel(chatId);
 });
 
-// --- CALLBACK QUERIES ---
+// --- CALLBACK QUERY HANDLER ---
 bot.on('callback_query', async (query) => {
     const chatId = query.message.chat.id;
     const data = query.data;
@@ -161,13 +152,13 @@ bot.on('callback_query', async (query) => {
             bot.deleteMessage(chatId, query.message.message_id).catch(() => {});
             sendMainMenu(chatId);
         } else {
-            bot.answerCallbackQuery(query.id, { text: "❌ Aapne abhi tak Telegram Channel aur Group join nahi kiya hai!", show_alert: true });
+            bot.answerCallbackQuery(query.id, { text: "❌ Aapne abhi tak Channel ya Group join nahi kiya!", show_alert: true });
         }
         return;
     }
 
     if (data.startsWith('admin_') || data === 'admin_panel') {
-        if (chatId !== ownerId) return bot.answerCallbackQuery(query.id, { text: "❌ Not Authorized!", show_alert: true });
+        if (chatId !== OWNER_ID) return bot.answerCallbackQuery(query.id, { text: "❌ Not Authorized!", show_alert: true });
     }
 
     if (data === 'admin_panel') {
@@ -175,58 +166,23 @@ bot.on('callback_query', async (query) => {
     } 
     else if (data === 'admin_stats') {
         const totalUsers = await User.countDocuments();
-        const totalOrders = await Order.countDocuments();
-        const completedOrders = await Order.countDocuments({ status: 'completed' });
-        
-        const statsMsg = `📊 *TEAM ZERO BOT STATS*\n\n👥 Total Users: ${totalUsers}\n🛒 Total Orders: ${totalOrders}\n✅ Completed (OTP Received): ${completedOrders}`;
-        bot.sendMessage(chatId, statsMsg, { parse_mode: 'Markdown' });
+        const totalSent = await SentOTP.countDocuments();
+        bot.sendMessage(chatId, `📊 *TEAM ZERO STATS*\n\n👥 Total Users: ${totalUsers}\n📨 Total OTPs Forwarded: ${totalSent}`, { parse_mode: 'Markdown' });
     } 
     else if (data === 'admin_broadcast') {
         adminState[chatId] = 'waiting_for_broadcast';
-        bot.sendMessage(chatId, "📢 *Broadcast Mode*\n\nApna message type karein jo sab users ko bhejna hai. (Cancel karne ke liye /cancel type karein)", { parse_mode: 'Markdown' });
+        bot.sendMessage(chatId, "📢 *Broadcast Mode*\n\nApna message bhejein jo sab users ko jayega. (Cancel ke liye /cancel likhein)");
     }
-    // Buy Services API handling fixed
-    else if (data.startsWith('buy_')) {
+    else if (data.startsWith('service_')) {
         const isJoined = await checkForceJoin(chatId);
-        if (!isJoined) {
-            bot.answerCallbackQuery(query.id, { text: "⚠️ Pehle channel aur group join karein." });
-            return sendForceJoinMenu(chatId);
-        }
+        if (!isJoined) return sendForceJoinMenu(chatId);
 
-        const serviceName = data.split('_')[1]; // whatsapp, facebook, etc.
-        bot.answerCallbackQuery(query.id, { text: "⏳ Fetching number..." });
-        bot.sendMessage(chatId, "⏳ TEAM ZERO system number fetch kar raha hai...");
-
-        try {
-            // Numberpanel API correct endpoint format
-            const apiUrl = `https://numberpanel.tech/api/v1/order?api_key=${numberPanelApiKey}&service=${serviceName}`;
-            const response = await axios.get(apiUrl);
-
-            if (response.data && (response.data.status === 'success' || response.data.id || response.data.number)) {
-                const orderId = response.data.id || response.data.orderId || response.data.request_id;
-                const number = response.data.number || response.data.phone;
-
-                if (!number) {
-                    bot.sendMessage(chatId, "❌ Number nahi mila. Stock khatam ho sakta hai ya service unavailable hai.");
-                    return;
-                }
-
-                const newOrder = new Order({ orderId, phoneNumber: number, userId: chatId, service: serviceName });
-                await newOrder.save();
-
-                bot.sendMessage(chatId, `✅ *New Number Issued!*\n\n📱 Number: \`${number}\`\n🔢 Order ID: ${orderId || 'N/A'}\n🌐 Service: ${serviceName.toUpperCase()}\n\n⏳ OTP ka wait karein, milte hi aapko aur group mein bhej diya jayega.`, { parse_mode: 'Markdown' });
-            } else {
-                bot.sendMessage(chatId, "❌ Number fetch nahi ho saka. Balance ya service check karein.");
-            }
-        } catch (error) {
-            console.error("API Error:", error.response?.data || error.message);
-            bot.sendMessage(chatId, "⚠️ TEAM ZERO Server Error: API response fail ho gayi.");
-        }
+        const sName = data.split('_')[1];
+        bot.answerCallbackQuery(query.id, { text: `Service: ${sName.toUpperCase()}` });
+        bot.sendMessage(chatId, `📱 Aapne *${sName.toUpperCase()}* select ki hai. Live OTPs automatically group mein aur yahan forward honge jab bhi receive honge.`, { parse_mode: 'Markdown' });
     }
-    
-    try {
-        bot.answerCallbackQuery(query.id);
-    } catch(e) {}
+
+    try { bot.answerCallbackQuery(query.id); } catch(e) {}
 });
 
 // --- BROADCAST LISTENER ---
@@ -242,57 +198,86 @@ bot.on('message', async (msg) => {
             return bot.sendMessage(chatId, "❌ Broadcast cancelled.");
         }
 
-        bot.sendMessage(chatId, "⏳ Broadcast start ho raha hai...");
-        adminState[chatId] = null; 
-
+        adminState[chatId] = null;
+        bot.sendMessage(chatId, "⏳ Broadcast shuru ho gaya hai...");
+        
         const users = await User.find();
-        let successCount = 0;
-
-        for (let user of users) {
+        let count = 0;
+        for (let u of users) {
             try {
-                await bot.sendMessage(user.chatId, `📢 *TEAM ZERO UPDATE*\n\n${text}`, { parse_mode: 'Markdown' });
-                successCount++;
-            } catch (err) {}
+                await bot.sendMessage(u.chatId, `📢 *TEAM ZERO UPDATE*\n\n${text}`, { parse_mode: 'Markdown' });
+                count++;
+            } catch (e) {}
         }
-        bot.sendMessage(chatId, `✅ Broadcast Complete!\n👥 Sent to: ${successCount}/${users.length} users.`);
+        bot.sendMessage(chatId, `✅ Broadcast complete! Sent to ${count} users.`);
     }
 });
 
-// --- OTP POLLING SYSTEM ---
-setInterval(async () => {
+// --- HELPER FUNCTIONS FOR OTP PROCESSING ---
+function extractOtp(msgText) {
+    const match = msgText.match(/\d{3}[-\s]?\d{3,4}|\d{4,8}/);
+    return match ? match[0] : 'Unknown';
+}
+
+function maskNumber(num) {
+    let sNum = String(num).replace('+', '');
+    if (sNum.length <= 6) return sNum;
+    return sNum.slice(0, 3) + "xxxx" + sNum.slice(-3);
+}
+
+// --- BACKGROUND OTP POLLING POOL ---
+async function pollOTPs() {
     try {
-        const pendingOrders = await Order.find({ status: 'pending' });
+        const response = await axios.get(API_URL);
+        const items = response.data;
 
-        for (let order of pendingOrders) {
-            const orderAgeMinutes = (Date.now() - order.createdAt.getTime()) / 60000;
-            if (orderAgeMinutes > 15) {
-                order.status = 'expired';
-                await order.save();
-                continue;
-            }
+        if (Array.isArray(items)) {
+            // Reverse taake purane pehle aur naye baad mein hon
+            for (let item of items.reverse()) {
+                // item structure based on Python code: [service, number, message_text, timestamp_id, ...]
+                const service = item[0] || 'Unknown';
+                const phoneNumber = item[1] || 'Unknown';
+                const messageText = item[2] || '';
+                const uniqueId = String(item[3] || `${service}_${phoneNumber}_${Date.now()}`);
 
-            const checkUrl = `https://numberpanel.tech/api/v1/check?api_key=${numberPanelApiKey}&id=${order.orderId}`;
-            const response = await axios.get(checkUrl);
+                // Check if already processed in DB
+                const exists = await SentOTP.findOne({ uid: uniqueId });
+                if (!exists) {
+                    const otpCode = extractOtp(messageText);
+                    const maskedNum = maskNumber(phoneNumber);
 
-            if (response.data && (response.data.status === 'success' || response.data.otp)) {
-                const otpCode = response.data.otp || response.data.code;
+                    // Save to DB to prevent duplicate sending
+                    await SentOTP.create({
+                        uid: uniqueId,
+                        service: service,
+                        phoneNumber: phoneNumber,
+                        otp: otpCode
+                    });
 
-                if (!otpCode) continue;
+                    // Format message
+                    const text = `🔥 *TEAM ZERO OTP RECEIVED* 🔥\n\n🌐 Service: *${service.toUpperCase()}*\n📱 Number: \`${maskedNum}\`\n💬 OTP Code: \`${otpCode}\`\n\n_POWERED BY TEAM ZERO_`;
+                    
+                    const markup = {
+                        inline_keyboard: [
+                            [{ text: `🔑 OTP: ${otpCode}`, callback_data: 'noop' }],
+                            [
+                                { text: "Methods", url: "https://youtube.com/@xclusor" },
+                                { text: "Channel", url: "https://whatsapp.com/channel/0029Vb7CHRO96H4QS1ynKI1J" }
+                            ],
+                            [{ text: "OTP Panel", url: "https://t.me/teamzerootp" }]
+                        ]
+                    };
 
-                // 1. Group mein OTP forward karna
-                const groupMessage = `🔥 *TEAM ZERO OTP RECEIVED* 🔥\n\n📱 Number: \`${order.phoneNumber}\`\n💬 OTP Code: \`${otpCode}\`\n🌐 Service: ${order.service.toUpperCase()}\n\n_POWERED BY TEAM ZERO_`;
-                bot.sendMessage(groupId, groupMessage, { parse_mode: 'Markdown' });
-
-                // 2. User ko direct bot mein notify karna
-                const userMessage = `✅ *Aapke number ka OTP aa gaya hai!*\n\n📱 Number: \`${order.phoneNumber}\`\n💬 OTP: \`${otpCode}\`\n🌐 Service: ${order.service.toUpperCase()}\n\n_POWERED BY TEAM ZERO_`;
-                bot.sendMessage(order.userId, userMessage, { parse_mode: 'Markdown' });
-
-                // 3. Database update karna
-                order.status = 'completed';
-                await order.save();
+                    // Send to Group
+                    await bot.sendMessage(GROUP_ID, text, { parse_mode: 'Markdown', reply_markup: markup });
+                    console.log(`✅ Sent OTP for ${phoneNumber} - ${service}`);
+                }
             }
         }
     } catch (error) {
-        console.error("OTP Polling Error:", error.message);
+        console.error("Polling Error:", error.message);
     }
-}, 10000);
+}
+
+// Start polling interval
+setInterval(pollOTPs, POLL_INTERVAL);
