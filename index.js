@@ -4,7 +4,7 @@ const axios = require('axios');
 const mongoose = require('mongoose');
 
 // --- CONFIGURATION ---
-const BOT_TOKEN = process.env.BOT_TOKEN || "8641069487:AAEpCameV9iRrj2BHjHT9gBvN8jAG_-IJsU";
+const BOT_TOKEN = process.env.BOT_TOKEN || "8641069487:AAHY1CGLOaK3bVUI7cbxV61eUlvx1JGZJpc";
 const GROUP_ID = -1003752493443;
 const OWNER_ID = 7077890783;
 const API_BASE_URL = "https://numberpanel.tech/api";
